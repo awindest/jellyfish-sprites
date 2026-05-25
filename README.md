@@ -1,9 +1,9 @@
 # Jellyfish Sprites
 ## An atmospheric phenomenon
 
-
-
 Jellyfish sprites are fascinating — those transient luminous events that flash high above thunderstorms in the mesosphere/stratosphere, shaped remarkably like jellyfish with a glowing red body and trailing tendrils. Simulation is on the left and the real thing is on the right in the below image.
+
+<img width="509" height="312" alt="jellyfish-sprite" src="https://github.com/user-attachments/assets/6b796076-a646-4437-b087-a805270b0593" />
 
 ## Simulation
 
