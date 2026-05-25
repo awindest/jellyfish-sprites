@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jellyfish Sprites – Atmospheric Phenomenon</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: monospace;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            max-width: 900px;
+            height: 560px;
+            border-radius: 12px;
+            cursor: crosshair;
+        }
+
+        p {
+            color: rgba(200, 200, 180, 0.4);
+            font-size: 11px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="c"></canvas>
+    <p>Click anywhere on the storm to trigger lightning and sprites</p>
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+
+        function resize() {
+            const r = canvas.getBoundingClientRect();
+            const dpr = devicePixelRatio || 1;
+            canvas.width = r.width * dpr;
+            canvas.height = r.height * dpr;
+            ctx.scale(dpr, dpr);
+            W = r.width;
+            H = r.height;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        const CLOUD_Y_FRAC = 0.72;
+        const STRAT_Y_FRAC = 0.18;
+        const MESO_Y_FRAC = 0.04;
+
+        let sprites = [];
+        let lightningBolts = [];
+        let cloudGlow = 0;
+        let stars = Array.from({ length: 120 }, () => ({
+            x: Math.random() * 900,
+            y: Math.random() * 0.7,
+            r: 0.4 + Math.random() * 1.0,
+            a: 0.3 + Math.random() * 0.6
+        }));
+
+        class LightningBolt {
+            constructor(x) {
+                this.x = x;
+                this.y0 = CLOUD_Y_FRAC * H * 0.88;
+                this.y1 = H;
+                this.alpha = 1;
+                this.age = 0;
+                this.life = 18 + Math.random() * 10;
+                this.segs = this.buildSegs();
+                this.branches = this.buildBranches();
+            }
+
+            buildSegs() {
+                const segs = [{ x: this.x, y: this.y0 }];
+                let cx = this.x, cy = this.y0;
+                const steps = 18;
+                for (let i = 0; i < steps; i++) {
+                    cx += (Math.random() - 0.5) * 22;
+                    cy += (this.y1 - this.y0) / steps * (0.7 + Math.random() * 0.6);
+                    segs.push({ x: cx, y: Math.min(cy, this.y1) });
+                }
+                return segs;
+            }
+
+            buildBranches() {
+                const branches = [];
+                for (let i = 3; i < this.segs.length - 2; i++) {
+                    if (Math.random() < 0.35) {
+                        const start = this.segs[i];
+                        const pts = [{ x: start.x, y: start.y }];
+                        let bx = start.x, by = start.y;
+                        const blen = 3 + Math.floor(Math.random() * 5);
+                        for (let j = 0; j < blen; j++) {
+                            bx += (Math.random() - 0.5) * 18 + (Math.random() > 0.5 ? 8 : -8);
+                            by += (H - start.y) / blen * (0.6 + Math.random() * 0.8);
+                            pts.push({ x: bx, y: Math.min(by, H) });
+                        }
+                        branches.push(pts);
+                    }
+                }
+                return branches;
+            }
+
+            update() {
+                this.age++;
+                this.alpha = Math.max(0, 1 - (this.age / this.life));
+            }
+
+            draw(ctx) {
+                if (this.alpha <= 0) return;
+                const drawPath = (pts, w) => {
+                    ctx.beginPath();
+                    ctx.moveTo(pts[0].x, pts[0].y);
+                    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                    ctx.strokeStyle = `rgba(220,235,255,${this.alpha * 0.9})`;
+                    ctx.lineWidth = w;
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(180,210,255,${this.alpha * 0.5})`;
+                    ctx.lineWidth = w * 3;
+                    ctx.stroke();
+                };
+                drawPath(this.segs, 1.5);
+                for (const b of this.branches) drawPath(b, 0.7);
+            }
+
+            get done() { return this.age >= this.life; }
+        }
+
+        class JellyfishSprite {
+            constructor(x) {
+                this.cx = x + (Math.random() - 0.5) * 60;
+                this.cy = (STRAT_Y_FRAC + Math.random() * (CLOUD_Y_FRAC - STRAT_Y_FRAC - 0.1)) * H;
+                this.r = 28 + Math.random() * 38;
+                this.age = 0;
+                this.life = 55 + Math.random() * 30;
+                this.alpha = 0;
+                this.halo = Math.random() < 0.55;
+                this.carrot = Math.random() < 0.35;
+                this.tentacles = this.buildTentacles();
+                this.streamers = this.buildStreamers();
+            }
+
+            buildTentacles() {
+                const t = [];
+                const count = 8 + Math.floor(Math.random() * 6);
+                for (let i = 0; i < count; i++) {
+                    const ang = (i / count) * Math.PI * 1.1 - Math.PI * 0.55;
+                    const len = this.r * (1.4 + Math.random() * 1.8);
+                    const segs = [];
+                    let sx = this.cx + Math.sin(ang) * this.r * 0.85;
+                    let sy = this.cy + this.r * 0.6;
+                    segs.push({ x: sx, y: sy });
+                    const steps = 10;
+                    for (let j = 1; j <= steps; j++) {
+                        const frac = j / steps;
+                        sx += Math.sin(ang + Math.sin(frac * Math.PI * 2) * 0.4) * len / steps;
+                        sy += len / steps * (0.7 + Math.random() * 0.5);
+                        segs.push({ x: sx, y: sy });
+                    }
+                    t.push(segs);
+                }
+                return t;
+            }
+
+            buildStreamers() {
+                const s = [];
+                if (!this.halo) return s;
+                const count = 3 + Math.floor(Math.random() * 4);
+                for (let i = 0; i < count; i++) {
+                    const ang = (i / count) * Math.PI * 2;
+                    const r0 = this.r * 1.1;
+                    const r1 = this.r * (1.5 + Math.random() * 1.2);
+                    s.push({
+                        x0: this.cx + Math.cos(ang) * r0, y0: this.cy + Math.sin(ang) * r0 * 0.4,
+                        x1: this.cx + Math.cos(ang) * r1, y1: this.cy + Math.sin(ang) * r1 * 0.4
+                    });
+                }
+                return s;
+            }
+
+            update() {
+                this.age++;
+                const frac = this.age / this.life;
+                if (frac < 0.15) this.alpha = frac / 0.15;
+                else if (frac < 0.55) this.alpha = 1;
+                else this.alpha = 1 - (frac - 0.55) / 0.45;
+                this.alpha = Math.max(0, Math.min(1, this.alpha));
+            }
+
+            draw(ctx) {
+                if (this.alpha <= 0) return;
+                const a = this.alpha;
+                const r = this.r;
+
+                if (this.halo) {
+                    ctx.beginPath();
+                    ctx.ellipse(this.cx, this.cy, r * 1.55, r * 0.55, 0, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(255,80,20,${a * 0.35})`;
+                    ctx.lineWidth = 2.5;
+                    ctx.stroke();
+                    for (const s of this.streamers) {
+                        ctx.beginPath();
+                        ctx.moveTo(s.x0, s.y0);
+                        ctx.lineTo(s.x1, s.y1);
+                        ctx.strokeStyle = `rgba(255,100,30,${a * 0.25})`;
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    }
+                }
+
+                const grd = ctx.createRadialGradient(this.cx, this.cy - r * 0.1, r * 0.1, this.cx, this.cy, r * 1.1);
+                grd.addColorStop(0, `rgba(255,230,180,${a * 0.95})`);
+                grd.addColorStop(0.25, `rgba(255,120,40,${a * 0.85})`);
+                grd.addColorStop(0.6, `rgba(220,40,10,${a * 0.6})`);
+                grd.addColorStop(1, `rgba(180,0,60,0)`);
+                ctx.beginPath();
+                ctx.ellipse(this.cx, this.cy, r, r * 0.72, 0, Math.PI, 0);
+                ctx.closePath();
+                ctx.fillStyle = grd;
+                ctx.fill();
+
+                const rimGrd = ctx.createLinearGradient(this.cx - r, this.cy, this.cx + r, this.cy);
+                rimGrd.addColorStop(0, `rgba(180,0,60,${a * 0.3})`);
+                rimGrd.addColorStop(0.5, `rgba(255,80,20,${a * 0.6})`);
+                rimGrd.addColorStop(1, `rgba(180,0,60,${a * 0.3})`);
+                ctx.beginPath();
+                ctx.ellipse(this.cx, this.cy, r, r * 0.72, 0, Math.PI, 0);
+                ctx.strokeStyle = rimGrd;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                for (const t of this.tentacles) {
+                    ctx.beginPath();
+                    ctx.moveTo(t[0].x, t[0].y);
+                    for (let i = 1; i < t.length; i++) {
+                        const prev = t[i - 1], curr = t[i];
+                        const mx = (prev.x + curr.x) / 2, my = (prev.y + curr.y) / 2;
+                        ctx.quadraticCurveTo(prev.x, prev.y, mx, my);
+                    }
+                    const tGrd = ctx.createLinearGradient(t[0].x, t[0].y, t[t.length - 1].x, t[t.length - 1].y);
+                    tGrd.addColorStop(0, `rgba(255,80,20,${a * 0.7})`);
+                    tGrd.addColorStop(0.4, `rgba(200,20,10,${a * 0.45})`);
+                    tGrd.addColorStop(1, `rgba(150,0,50,0)`);
+                    ctx.strokeStyle = tGrd;
+                    ctx.lineWidth = 1.2;
+                    ctx.stroke();
+                }
+
+                if (this.carrot) {
+                    ctx.beginPath();
+                    ctx.moveTo(this.cx, this.cy - r * 0.65);
+                    ctx.lineTo(this.cx, this.cy - r * 1.4);
+                    ctx.strokeStyle = `rgba(120,180,255,${a * 0.55})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.ellipse(this.cx, this.cy - r * 1.4, r * 0.22, r * 0.1, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(140,200,255,${a * 0.45})`;
+                    ctx.fill();
+                }
+            }
+
+            get done() { return this.age >= this.life; }
+        }
+
+        function drawAtmosphere() {
+            const cloudY = CLOUD_Y_FRAC * H;
+
+            const bg = ctx.createLinearGradient(0, 0, 0, H);
+            bg.addColorStop(0, '#000005');
+            bg.addColorStop(MESO_Y_FRAC, '#05001a');
+            bg.addColorStop(STRAT_Y_FRAC, '#0a0020');
+            bg.addColorStop(CLOUD_Y_FRAC * 0.85, '#08001a');
+            bg.addColorStop(CLOUD_Y_FRAC, '#1a0a00');
+            bg.addColorStop(1, '#0d0500');
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, W, H);
+
+            for (const s of stars) {
+                ctx.beginPath();
+                ctx.arc(s.x % W, s.y * H, s.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255,255,240,${s.a})`;
+                ctx.fill();
+            }
+
+            const cloudGrd = ctx.createLinearGradient(0, cloudY - 30, 0, H);
+            cloudGrd.addColorStop(0, `rgba(30,15,5,0.92)`);
+            cloudGrd.addColorStop(0.15, `rgba(20,10,3,0.97)`);
+            cloudGrd.addColorStop(1, `rgba(5,2,0,1)`);
+            ctx.fillStyle = cloudGrd;
+            ctx.fillRect(0, cloudY - 30, W, H - (cloudY - 30));
+
+            if (cloudGlow > 0) {
+                const glowX = W * (0.3 + Math.random() * 0.4);
+                const gr = ctx.createRadialGradient(glowX, cloudY, 0, glowX, cloudY, 120);
+                gr.addColorStop(0, `rgba(255,220,100,${cloudGlow * 0.6})`);
+                gr.addColorStop(0.4, `rgba(255,160,30,${cloudGlow * 0.25})`);
+                gr.addColorStop(1, `rgba(255,100,0,0)`);
+                ctx.fillStyle = gr;
+                ctx.fillRect(0, cloudY - 60, W, 120);
+            }
+
+            const labels = [
+                { y: MESO_Y_FRAC, label: 'mesosphere  ~85 km' },
+                { y: STRAT_Y_FRAC + 0.015, label: 'stratosphere  ~50 km' },
+                { y: CLOUD_Y_FRAC - 0.04, label: 'troposphere  ~15 km' },
+            ];
+            ctx.font = '10px monospace';
+            for (const l of labels) {
+                ctx.fillStyle = 'rgba(200,200,180,0.18)';
+                ctx.fillRect(0, l.y * H, W, 0.5);
+                ctx.fillStyle = 'rgba(200,200,180,0.75)';
+                ctx.fillText(l.label, 8, l.y * H - 4);
+            }
+        }
+
+        let ticksSinceLightning = 0;
+        let autoInterval = 90;
+
+        function triggerEvent(x) {
+            cloudGlow = 0.7 + Math.random() * 0.3;
+            const boltCount = 1 + Math.floor(Math.random() * 3);
+            for (let i = 0; i < boltCount; i++) {
+                lightningBolts.push(new LightningBolt(x + (Math.random() - 0.5) * 50));
+            }
+            if (Math.random() < 0.75) {
+                setTimeout(() => {
+                    const count = 1 + (Math.random() < 0.4 ? 1 : 0);
+                    for (let i = 0; i < count; i++) sprites.push(new JellyfishSprite(x));
+                }, 80 + Math.random() * 120);
+            }
+        }
+
+        function tick() {
+            ticksSinceLightning++;
+            cloudGlow *= 0.88;
+
+            if (ticksSinceLightning > autoInterval + Math.random() * 60) {
+                triggerEvent(W * (0.2 + Math.random() * 0.6));
+                ticksSinceLightning = 0;
+                autoInterval = 70 + Math.random() * 80;
+            }
+
+            for (const b of lightningBolts) b.update();
+            for (const s of sprites) s.update();
+            lightningBolts = lightningBolts.filter(b => !b.done);
+            sprites = sprites.filter(s => !s.done);
+
+            ctx.clearRect(0, 0, W, H);
+            drawAtmosphere();
+            for (const b of lightningBolts) b.draw(ctx);
+            for (const s of sprites) s.draw(ctx);
+
+            requestAnimationFrame(tick);
+        }
+
+        canvas.addEventListener('click', (e) => {
+            const r = canvas.getBoundingClientRect();
+            triggerEvent(e.clientX - r.left);
+            ticksSinceLightning = 0;
+        });
+
+        requestAnimationFrame(tick);
+    </script>
+</body>
+
+</html>
